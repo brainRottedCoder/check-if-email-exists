@@ -1,0 +1,8 @@
+.git
+.github
+.vscode
+ci
+target/
+Dockerfile.*
+docs/
+.env

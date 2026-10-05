@@ -1,0 +1,32 @@
+# Render Blueprint for the email existence check.
+#
+# Mailbox checks talk to the recipient's mail server on port 25 and then hang
+# up before any message is accepted, so the check itself does not bounce.
+# Render blocks outbound port 25 on every plan. Syntax and "no mail server"
+# failures still come back as would_bounce=true. To confirm a real mailbox,
+# add a SOCKS5 proxy in the Render dashboard:
+#   RCH__PROXY__HOST
+#   RCH__PROXY__PORT
+#   RCH__PROXY__USERNAME   (optional)
+#   RCH__PROXY__PASSWORD   (optional)
+services:
+  - type: web
+    name: email-validator
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: RUST_LOG
+        value: reacher=info
+      - key: RCH__HTTP_HOST
+        value: 0.0.0.0
+      - key: RCH__WORKER__ENABLE
+        value: "false"
+      - key: RCH__SMTP_TIMEOUT
+        value: "15"
+      - key: RCH__BACKEND_NAME
+        value: render
+      - key: RCH_ENABLE_CHROMEDRIVER
+        value: "false"

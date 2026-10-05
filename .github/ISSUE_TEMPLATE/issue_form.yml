@@ -1,0 +1,45 @@
+name: Bug Report
+labels: bug
+description: Create a bug report to help us improve.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: input
+    id: email
+    attributes:
+      label: Email to check
+      description: To preserve privacy, don't use a full email. But if relevant, please tell us which provider is used (e.g. gmail, hotmail...)
+      placeholder: ex. example.com
+    validations:
+      required: false
+  - type: input
+    id: server
+    attributes:
+      label: From where did you run check-if-email-exists?
+      description: Was it from Reacher dashboard? Or give the provider where you installed check-if-email-exists
+      placeholder: ex. Reacher Dashboard, or OVH, Heroku, Digital Ocean...
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version of check-if-email-exists (if running it yourself)
+      description: When you're running check-if-email-exists yourself, which version are you using? You can also put the Docker tag you're using.
+    validations:
+      required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also tell us, what did you expect to happen?
+      placeholder: Tell us what you see!
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please copy and paste any relevant log output when running with `RUST_LOG=debug`. This will be automatically formatted into code, so no need for backticks.
+      render: shell
