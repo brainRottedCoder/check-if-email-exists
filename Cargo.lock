@@ -304,7 +304,7 @@ dependencies = [
  "async-io 1.13.0",
  "async-trait",
  "futures-core",
- "reactor-trait",
+ "reactor-trait 1.1.0",
 ]
 
 [[package]]
@@ -2204,7 +2204,7 @@ dependencies = [
  "futures-io",
  "parking_lot",
  "pinky-swear",
- "reactor-trait",
+ "reactor-trait 1.1.0",
  "serde",
  "tracing",
  "waker-fn",
@@ -3115,6 +3115,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "438a4293e4d097556730f4711998189416232f009c137389e0f961d2bc0ddc58"
 dependencies = [
  "async-trait",
+ "futures-core",
+ "futures-io",
+]
+
+[[package]]
+name = "reactor-trait"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b1c85237926dd82e8bc3634240ecf2236ea81e904b3d83cdb1df974af9af293"
+dependencies = [
+ "async-trait",
+ "executor-trait",
+ "flume",
  "futures-core",
  "futures-io",
 ]
@@ -4379,16 +4392,17 @@ dependencies = [
 
 [[package]]
 name = "tokio-reactor-trait"
-version = "1.1.0"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9481a72f36bd9cbb8d6dd349227c4783e234e4332cfe806225bc929c4b92486"
+checksum = "e5410ef3f06b4ca0b3868bebeb24e19fef3a05e2ad086f2b8230f2bdf4052cdf"
 dependencies = [
  "async-trait",
  "futures-core",
  "futures-io",
- "reactor-trait",
+ "reactor-trait 3.1.1",
  "tokio",
  "tokio-stream",
+ "tokio-util",
 ]
 
 [[package]]
@@ -4432,6 +4446,7 @@ checksum = "d7fcaa8d55a2bdd6b83ace262b016eca0d79ee02818c5c1bcdf0305114081078"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "pin-project-lite",
  "tokio",
