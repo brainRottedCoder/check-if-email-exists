@@ -46,5 +46,5 @@ uuid = "1.10"
 warp = "0.3"
 
 [dev-dependencies]
-serial_test = "3.2"
+serial_test = "4.0"
 toml = "0.8"
