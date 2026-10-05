@@ -19,9 +19,10 @@
 //! `/validate` reports whether a mailbox exists. The check stops after the
 //! SMTP `RCPT TO` response, so no message is accepted and nothing can bounce.
 
-use check_if_email_exists::{
-	check_email, CheckEmailOutput, MiscDetails, MxDetails, Reachable, SmtpDetails, LOG_TARGET,
-};
+use check_if_email_exists::misc::MiscDetails;
+use check_if_email_exists::mx::MxDetails;
+use check_if_email_exists::smtp::SmtpDetails;
+use check_if_email_exists::{check_email, CheckEmailOutput, Reachable, LOG_TARGET};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use warp::{http, Filter};
@@ -357,7 +358,7 @@ pub fn routes(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use check_if_email_exists::SmtpDetails;
+	use check_if_email_exists::smtp::SmtpDetails;
 
 	fn signals<'a>(smtp: Option<&'a SmtpDetails>, smtp_failed: bool) -> Signals<'a> {
 		Signals {
