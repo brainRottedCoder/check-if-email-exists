@@ -24,7 +24,7 @@ fantoccini = { version = "0.21.2", default-features = false, features = [
     "rustls-tls",
 ] }
 futures = { version = "0.3.30" }
-hickory-proto = "0.24.0"
+hickory-proto = "0.26.3"
 hickory-resolver = "0.24.0"
 levenshtein = "1.0.5"
 log = "0.4.26"
