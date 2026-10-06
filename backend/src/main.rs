@@ -14,6 +14,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// The library crate already raises this limit. The binary is compiled
+// separately, and the same RabbitMQ type check overflows there.
+#![recursion_limit = "2048"]
+
 //! Main entry point of the `reacher_backend` binary. It has two `main`
 //! functions, depending on whether the `bulk` feature is enabled or not.
 

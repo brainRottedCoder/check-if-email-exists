@@ -3,12 +3,11 @@
 # This is the Dockerfile's entrypoint script.
 # https://docs.docker.com/config/containers/multi-service_container/
 #
-# Chrome is only required for headless Yahoo and Hotmail checks. SMTP mailbox
-# checks do not need it, and skipping it keeps the process small enough for
-# Render. Set RCH_ENABLE_CHROMEDRIVER=false to skip it.
+# Chrome is only required for headless Yahoo and Hotmail checks. Leave it off
+# unless that browser is installed and the instance has enough memory.
 
-if [ "${RCH_ENABLE_CHROMEDRIVER:-true}" = "true" ]; then
+if [ "${RCH_ENABLE_CHROMEDRIVER:-false}" = "true" ]; then
 	chromedriver &
 fi
 
-./reacher_backend
+exec ./reacher_backend

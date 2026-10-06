@@ -34,17 +34,22 @@ COPY --from=cargo-build /usr/src/reacher/target/x86_64-unknown-linux-musl/releas
 COPY --from=cargo-build /usr/src/reacher/backend/docker.sh .
 COPY --from=cargo-build /usr/src/reacher/backend/backend_config.toml .
 
-RUN chown chrome:chrome reacher_backend
-RUN chown chrome:chrome docker.sh
+# Git checkouts on Windows can commit shell scripts with CRLF. Alpine then
+# looks for /bin/ash<CR> and the container exits before the server listens.
+RUN sed -i 's/\r$//' docker.sh && chmod +x docker.sh reacher_backend && chown chrome:chrome reacher_backend docker.sh
 
 # User chrome was created in zenika/alpine-chrome
 USER chrome
 
 ENV RUST_LOG=reacher=info
 ENV RCH__HTTP_HOST=0.0.0.0
-# Currently this Dockerfile is mainly used for single-shot verifications, so we
-# disable the worker by default.
+ENV RCH__BACKEND_NAME=render
+# Single-shot checks only. RabbitMQ and Postgres are not required to boot.
 ENV RCH__WORKER__ENABLE=false
+# Stop a mailbox probe from hanging until Render kills the request.
+ENV RCH__SMTP_TIMEOUT=15
+# Chrome does not fit in Render's 512 MB instance. SMTP checks do not need it.
+ENV RCH_ENABLE_CHROMEDRIVER=false
 
 EXPOSE 8080
 
