@@ -1,14 +1,8 @@
 # Render Blueprint for the email existence check.
 #
-# Mailbox checks talk to the recipient's mail server on port 25 and then hang
-# up before any message is accepted, so the check itself does not bounce.
-# Render blocks outbound port 25 on every plan. Syntax and "no mail server"
-# failures still come back as would_bounce=true. To confirm a real mailbox,
-# add a SOCKS5 proxy in the Render dashboard:
-#   RCH__PROXY__HOST
-#   RCH__PROXY__PORT
-#   RCH__PROXY__USERNAME   (optional)
-#   RCH__PROXY__PASSWORD   (optional)
+# Render blocks outbound port 25, so /validate checks syntax and MX only
+# unless a SOCKS5 proxy is set. Send when safe_to_send is true. Skip when
+# would_bounce is true (bad syntax or no mail server).
 services:
   - type: web
     name: email-validator

@@ -16,12 +16,15 @@
 
 //! `GET /` , `GET /health`, and `GET|POST /validate`.
 //!
-//! `/validate` reports whether a mailbox exists. The check stops after the
-//! SMTP `RCPT TO` response, so no message is accepted and nothing can bounce.
+//! Render blocks outbound port 25, so this endpoint does not wait on SMTP
+//! unless a SOCKS5 proxy is configured. It still rejects bad syntax and
+//! domains with no mail server, which is what actually prevents a bounce
+//! from this host.
 
-use check_if_email_exists::misc::MiscDetails;
-use check_if_email_exists::mx::MxDetails;
+use check_if_email_exists::misc::check_misc;
+use check_if_email_exists::mx::{check_mx, MxDetails};
 use check_if_email_exists::smtp::SmtpDetails;
+use check_if_email_exists::syntax::check_syntax;
 use check_if_email_exists::{check_email, CheckEmailOutput, Reachable, LOG_TARGET};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -31,19 +34,21 @@ use super::v0::check_email::post::{with_config, CheckEmailRequest};
 use super::{check_header, ReacherResponseError};
 use crate::config::BackendConfig;
 
-/// Plain answer for "does this address exist, and would sending bounce?"
+/// Plain answer for "should this address receive a message?"
 #[derive(Debug, PartialEq, Serialize)]
 pub struct ValidateResponse {
 	pub email: String,
 	/// `true` when the mailbox exists, `false` when it does not, `null` when
-	/// the mail server did not give a definite answer.
+	/// only the domain could be checked.
 	pub exists: Option<bool>,
-	/// Send only when this is `true`. That is the set of addresses that will
-	/// not bounce.
+	/// Send when this is `true`. On Render that means valid syntax and a
+	/// domain that accepts mail, because port 25 is blocked.
 	pub safe_to_send: bool,
-	/// `true` when a real message would bounce, `false` when it would be
-	/// accepted, `null` when that cannot be known.
+	/// `true` only when we know a message would bounce.
 	pub would_bounce: Option<bool>,
+	/// `syntax`, `domain`, or `mailbox`.
+	pub check_level: String,
+	pub mailbox_confirmed: bool,
 	pub is_reachable: String,
 	/// This endpoint never submits a message.
 	pub message_sent: bool,
@@ -119,6 +124,8 @@ fn response(
 	exists: Option<bool>,
 	safe_to_send: bool,
 	would_bounce: Option<bool>,
+	check_level: &str,
+	mailbox_confirmed: bool,
 	reason: &str,
 ) -> ValidateResponse {
 	ValidateResponse {
@@ -126,10 +133,25 @@ fn response(
 		exists,
 		safe_to_send,
 		would_bounce,
+		check_level: check_level.to_string(),
+		mailbox_confirmed,
 		is_reachable: reachable_label(reachable).to_string(),
 		message_sent: false,
 		reason: reason.to_string(),
 	}
+}
+
+fn domain_ok(email: &str, reachable: Reachable, reason: &str) -> ValidateResponse {
+	response(
+		email,
+		reachable,
+		None,
+		true,
+		Some(false),
+		"domain",
+		false,
+		reason,
+	)
 }
 
 /// Turn a full verification into a yes / no / unknown mailbox answer.
@@ -145,6 +167,8 @@ fn decide(email: &str, signals: Signals<'_>) -> ValidateResponse {
 			Some(false),
 			false,
 			Some(true),
+			"syntax",
+			false,
 			"The address is not a valid email, so a message to it would bounce.",
 		);
 	}
@@ -157,7 +181,9 @@ fn decide(email: &str, signals: Signals<'_>) -> ValidateResponse {
 				None,
 				false,
 				None,
-				"The domain's mail server could not be looked up. No message was sent.",
+				"syntax",
+				false,
+				"The domain's mail server could not be looked up. Skip this address.",
 			);
 		}
 		Some(false) => {
@@ -167,47 +193,45 @@ fn decide(email: &str, signals: Signals<'_>) -> ValidateResponse {
 				Some(false),
 				false,
 				Some(true),
+				"domain",
+				false,
 				"The domain has no mail server, so a message to it would bounce.",
 			);
 		}
 		Some(true) => {}
 	}
 
-	if signals.smtp_failed {
+	if signals.is_disposable {
 		return response(
 			email,
-			Reachable::Unknown,
+			Reachable::Risky,
 			None,
 			false,
 			None,
-			"The mail server did not answer, so the mailbox could not be confirmed. No message was sent. On Render this usually means outbound port 25 is blocked; set a SOCKS5 proxy to finish the check.",
-		);
-	}
-
-	let smtp = match signals.smtp {
-		Some(details) => details,
-		None => {
-			return response(
-				email,
-				Reachable::Unknown,
-				None,
-				false,
-				None,
-				"The mail server did not answer, so the mailbox could not be confirmed. No message was sent.",
-			);
-		}
-	};
-
-	if !smtp.can_connect_smtp {
-		return response(
-			email,
-			Reachable::Unknown,
-			None,
+			"domain",
 			false,
-			None,
-			"Could not connect to the mail server. No message was sent. On Render, outbound port 25 is blocked, so set a SOCKS5 proxy to confirm the mailbox.",
+			"The domain is a disposable email provider. Skip it to avoid a bounce.",
 		);
 	}
+
+	let smtp_unreachable = signals.smtp_failed
+		|| signals
+			.smtp
+			.map(|smtp| !smtp.can_connect_smtp)
+			.unwrap_or(true);
+
+	if smtp_unreachable {
+		let reason = if signals.is_role_account {
+			"The domain accepts mail. This host cannot confirm the mailbox because outbound port 25 is blocked. Send it. It is a shared role address such as info@ or support@."
+		} else {
+			"The domain accepts mail. This host cannot confirm the mailbox because outbound port 25 is blocked. Send it."
+		};
+		return domain_ok(email, Reachable::Unknown, reason);
+	}
+
+	let smtp = signals
+		.smtp
+		.expect("smtp_unreachable is false, so smtp details are present");
 
 	if smtp.is_disabled || (!smtp.is_deliverable && !smtp.is_catch_all && !smtp.has_full_inbox) {
 		return response(
@@ -216,6 +240,8 @@ fn decide(email: &str, signals: Signals<'_>) -> ValidateResponse {
 			Some(false),
 			false,
 			Some(true),
+			"mailbox",
+			false,
 			"The mailbox does not exist, so a message to it would bounce.",
 		);
 	}
@@ -227,29 +253,17 @@ fn decide(email: &str, signals: Signals<'_>) -> ValidateResponse {
 			Some(true),
 			false,
 			Some(true),
+			"mailbox",
+			true,
 			"The mailbox exists, but the inbox is full, so a message would bounce.",
 		);
 	}
 
 	if smtp.is_catch_all {
-		return response(
+		return domain_ok(
 			email,
 			Reachable::Risky,
-			None,
-			false,
-			None,
-			"The domain accepts every address, so this exact mailbox cannot be confirmed. Sending may bounce.",
-		);
-	}
-
-	if signals.is_disposable {
-		return response(
-			email,
-			Reachable::Risky,
-			Some(true),
-			false,
-			None,
-			"The mailbox exists, but it is a disposable address and later mail to it often bounces.",
+			"The domain accepts every address. Send it; the exact mailbox cannot be confirmed.",
 		);
 	}
 
@@ -260,6 +274,8 @@ fn decide(email: &str, signals: Signals<'_>) -> ValidateResponse {
 			Some(true),
 			true,
 			Some(false),
+			"mailbox",
+			true,
 			"The mailbox exists and will accept mail. It is a shared role address such as info@ or support@.",
 		);
 	}
@@ -270,8 +286,46 @@ fn decide(email: &str, signals: Signals<'_>) -> ValidateResponse {
 		Some(true),
 		true,
 		Some(false),
+		"mailbox",
+		true,
 		"The mailbox exists. No message was sent, so this check cannot bounce.",
 	)
+}
+
+fn has_smtp_proxy(config: &BackendConfig) -> bool {
+	config.proxy.is_some() || !config.get_verif_method().proxies.is_empty()
+}
+
+async fn domain_signals(email: &str) -> Signals<'static> {
+	let syntax = check_syntax(email);
+	if !syntax.is_valid_syntax {
+		return Signals {
+			valid_syntax: false,
+			accepts_mail: None,
+			smtp_failed: true,
+			smtp: None,
+			is_disposable: false,
+			is_role_account: false,
+		};
+	}
+
+	let accepts_mail = match check_mx(&syntax).await {
+		Err(_) => None,
+		Ok(MxDetails { lookup }) => match lookup {
+			Ok(records) => Some(records.iter().next().is_some()),
+			Err(_) => Some(false),
+		},
+	};
+
+	let misc = check_misc(&syntax, false, None).await;
+	Signals {
+		valid_syntax: true,
+		accepts_mail,
+		smtp_failed: true,
+		smtp: None,
+		is_disposable: misc.is_disposable,
+		is_role_account: misc.is_role_account,
+	}
 }
 
 async fn validate_email(
@@ -287,17 +341,21 @@ async fn validate_email(
 		.into());
 	}
 
-	let request = CheckEmailRequest {
-		to_email: email,
-		..CheckEmailRequest::default()
+	let summary = if has_smtp_proxy(config.as_ref()) {
+		let request = CheckEmailRequest {
+			to_email: email,
+			..CheckEmailRequest::default()
+		};
+		summarize(&check_email(&request.to_check_email_input(config)).await)
+	} else {
+		decide(&email, domain_signals(&email).await)
 	};
-	let output = check_email(&request.to_check_email_input(config)).await;
-	let summary = summarize(&output);
 	tracing::info!(
 		target: LOG_TARGET,
 		email = %summary.email,
 		exists = ?summary.exists,
 		safe_to_send = summary.safe_to_send,
+		check_level = %summary.check_level,
 		"Validated email"
 	);
 	Ok(warp::reply::json(&summary))
@@ -311,7 +369,8 @@ fn index() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection
 			"usage": {
 				"method": "POST",
 				"path": "/validate",
-				"body": {"email": "name@example.com"}
+				"body": {"email": "name@example.com"},
+				"send_when": "safe_to_send is true"
 			}
 		}))
 	})
@@ -406,12 +465,14 @@ mod tests {
 	}
 
 	#[test]
-	fn unreachable_smtp_is_unknown() {
+	fn unreachable_smtp_is_safe_at_domain_level() {
 		let summary = decide("person@example.com", signals(None, true));
 
 		assert_eq!(summary.exists, None);
-		assert_eq!(summary.would_bounce, None);
-		assert!(!summary.safe_to_send);
+		assert_eq!(summary.would_bounce, Some(false));
+		assert!(summary.safe_to_send);
+		assert_eq!(summary.check_level, "domain");
+		assert!(!summary.mailbox_confirmed);
 		assert!(!summary.message_sent);
 	}
 
